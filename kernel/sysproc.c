@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -95,3 +96,37 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// 设置系统调用跟踪掩码。
+// 用户程序 trace(mask) 调用到这里，把 mask 存入本进程的 tracemask。
+uint64
+sys_trace(void)
+{
+  int mask;
+  if(argint(0, &mask) < 0)     // 从 trapframe->a0 取参数
+    return -1;
+  myproc()->tracemask = mask;  // 存进当前进程
+  return 0;
+}
+
+// 收集系统信息：空闲内存字节数 + 非 UNUSED 的进程数。
+// sysinfo() 把用户传入的指针地址作为参数，这里是那个指针。
+uint64
+sys_sysinfo(void)
+{
+  uint64 addr;                 // 用户空间 struct sysinfo* 的地址
+  struct sysinfo info;
+  struct proc *p = myproc();
+
+  if(argaddr(0, &addr) < 0)
+    return -1;
+
+  info.freemem = getfreemem();
+  info.nproc = getnproc();
+
+  // 把内核栈上的 info 拷贝到用户空间的 addr 处
+  if(copyout(p->pagetable, addr, (char *)&info, sizeof(info)) < 0)
+    return -1;
+  return 0;
+}
+
