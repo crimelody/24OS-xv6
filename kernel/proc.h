@@ -105,4 +105,11 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  // lab 4: sigalarm 状态（进程私有，无需 p->lock）
+  int alarm_interval;                 // 每隔多少 tick 触发（0 = 关闭）
+  uint64 handler_va;                  // 用户态处理函数地址
+  int passed_ticks;                   // 距上次触发已过去的 tick 数
+  int alarm_reentrant;                // 处理函数是否正在执行（防重入）
+  struct trapframe saved_trapframe;   // 触发时保存的用户现场
 };

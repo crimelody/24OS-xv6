@@ -126,6 +126,25 @@ panic(char *s)
     ;
 }
 
+// lab 4: 打印调用栈回溯。
+// RISC-V 调用约定：返回地址在 (fp-8)，上一帧指针在 (fp-16)。
+// 每个内核栈是一整页，用 PGROUNDDOWN(fp) 判断是否已走出本页（终止条件）。
+void
+backtrace(void)
+{
+  uint64 fp = r_fp();   // 当前帧指针
+  uint64 top = PGROUNDDOWN(fp);  // 本内核栈所在页的底部
+
+  printf("backtrace:\n");
+  while(fp >= top && fp < top + PGSIZE){
+    uint64 ra = *(uint64 *)(fp - 8);   // 保存的返回地址
+    printf("%p\n", ra);
+    fp = *(uint64 *)(fp - 16);         // 上一帧的帧指针
+    if(fp < top || fp >= top + PGSIZE) // 越界则停
+      break;
+  }
+}
+
 void
 printfinit(void)
 {

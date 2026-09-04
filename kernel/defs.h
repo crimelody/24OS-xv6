@@ -79,6 +79,7 @@ int             pipewrite(struct pipe*, uint64, int);
 // printf.c
 void            printf(char*, ...);
 void            panic(char*) __attribute__((noreturn));
+void            backtrace(void);   // lab 4: 打印调用栈回溯
 void            printfinit(void);
 
 // proc.c

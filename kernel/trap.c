@@ -76,9 +76,22 @@ usertrap(void)
   if(p->killed)
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  // lab 4: 时钟中断（which_dev == 2）时驱动 alarm——
+  // 每消耗 interval 个 tick 触发一次用户态处理函数（handler）
+  if(which_dev == 2){
+    struct proc *ap = myproc();   // 与上方 p 相同，仅表意清晰
+    if(ap->alarm_interval > 0 && !ap->alarm_reentrant){
+      ap->passed_ticks++;
+      if(ap->passed_ticks >= ap->alarm_interval){
+        ap->saved_trapframe = *ap->trapframe;  // ① 保存现场
+        ap->trapframe->epc = ap->handler_va;   // ② 下次进用户态从 handler 跑
+        ap->passed_ticks = 0;                  // ③ 重新计时
+        ap->alarm_reentrant = 1;               // ④ 防重入
+      }
+    }
+    // give up the CPU if this is a timer interrupt.
     yield();
+  }
 
   usertrapret();
 }

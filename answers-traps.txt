@@ -1,0 +1,17 @@
+Q1: Which registers contain arguments to functions? For example, which register holds 13 in main's call to printf?
+RISC-V passes the first 8 arguments in registers a0-a7. In main, "li a2,13" loads 13 into a2, so 13 is in a2.
+
+Q2: Where is the call to function f in the assembly code for main? Where is the call to g? (Hint: the compiler may inline functions.)
+There is no call to f or g at all. The compiler optimized f(8)+1 into the constant 12: "li a1,12". This is constant folding / inlining across the whole call chain f->g.
+
+Q3: At what address is the function printf located?
+0x640. The jalr instruction reads "jalr 1552(ra) # 640 <printf>".
+
+Q4: What value is in the register ra just after the jalr to printf in main?
+0x38. jalr stores pc+4 into ra (the return address); the jalr is at 0x34, so ra = 0x38, which is the address of the next instruction (li a0,0 for exit).
+
+Q5: Run the following code. What is the output? ... (little vs big endian)
+Output is "He110 World". i = 0x00646c72 stored little-endian in memory is bytes 72 6c 64 (i.e. 'r','l','d') at increasing addresses, so %s prints "rld". 57616 = 0xe110, so %x prints "e110". If the machine were big-endian, i would need to be 0x00726c64 so that memory holds 'r','l','d' in order; 57616 does not need to change because it is a single value whose numeric representation is endian-independent for printing as hex.
+
+Q6: In the following code, what is going to be printed after 'y='? (note: the answer is not a specific value.) Why does this happen?
+A garbage/undefined value. printf reads its 2nd argument from a2, but the call only supplied one argument (3 in a1), so a2 still holds whatever value happened to be there (here 13 from earlier call setup). C variadic functions on RISC-V can't detect missing arguments.

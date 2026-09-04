@@ -58,6 +58,8 @@ sys_sleep(void)
   int n;
   uint ticks0;
 
+  backtrace();   // lab 4: 仅用于测试 bttest，验证 backtrace 输出
+
   if(argint(0, &n) < 0)
     return -1;
   acquire(&tickslock);
@@ -94,4 +96,37 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+// lab 4: 设置周期定时警报。sigalarm(interval, handler)：
+// interval=0 时关闭；否则每消耗 interval 个 tick，内核跳到用户态 handler。
+uint64
+sys_sigalarm(void)
+{
+  int interval;
+  uint64 handler;
+  struct proc *p = myproc();
+
+  if(argint(0, &interval) < 0)
+    return -1;
+  if(argaddr(1, &handler) < 0)
+    return -1;
+
+  p->alarm_interval = interval;
+  p->handler_va = handler;
+  p->passed_ticks = 0;         // 重置计时
+  p->alarm_reentrant = 0;      // 允许新一轮触发
+  return 0;
+}
+
+// lab 4: 从处理函数返回：恢复被中断的现场（trapframe），
+// 使进程在中断发生处继续执行，如同什么都没发生。
+uint64
+sys_sigreturn(void)
+{
+  struct proc *p = myproc();
+
+  *p->trapframe = p->saved_trapframe;  // 恢复保存的全部寄存器/PC
+  p->alarm_reentrant = 0;              // 处理函数结束，允许下次触发
+  return p->trapframe->a0;             // 返回值在 a0，保持调用语义
 }
