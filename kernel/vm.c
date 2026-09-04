@@ -291,6 +291,34 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
+// lab 3: 递归打印页表（vmprint 的辅助函数）
+// 缩进规则：第 depth 级（根为 0）打印 (depth+1) 个 ".. "，
+// 即根条目 1 个 ".."、二级 2 个、三级 3 个（与官方输出格式一致）。
+static void
+vmprint_rec(pagetable_t pagetable, int depth)
+{
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V){
+      uint64 pa = PTE2PA(pte);
+      for(int j = 0; j < depth + 1; j++)
+        printf(".. ");
+      printf("%d: pte %p pa %p\n", i, pte, pa);
+      // 若该 PTE 指向下一级页表（无 R/W/X 标志位），继续递归
+      if((pte & (PTE_R|PTE_W|PTE_X)) == 0)
+        vmprint_rec((pagetable_t)pa, depth + 1);
+    }
+  }
+}
+
+// lab 3: 打印进程页表，供 exec 中 pid==1 时调用
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  vmprint_rec(pagetable, 0);
+}
+
 // Given a parent process's page table, copy
 // its memory into a child's page table.
 // Copies both the page table and the

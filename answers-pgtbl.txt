@@ -1,0 +1,16 @@
+Q1: What's in page 0? What's in page 2?
+Page 0 is the root page table page; its PTE 0 points to the level-1 (middle) page
+table page, and PTE 255 points to another level-1 page table (for high addresses
+like the stack/trapframe). Page 2 here refers to the 3rd entry chain: PTE index 2
+in the middle page table points to a leaf page that contains the user program's
+text/data (mapped at low virtual addresses).
+
+Q2: When running in user mode, can the process read or write the memory mapped by
+page 1? What about page 2?
+The lowest leaf pages (text) are mapped PTE_R|PTE_X|PTE_U without PTE_W, so a user
+process can read and execute them but NOT write them. Writing triggers a page fault.
+
+Q3: What is in the 3rd-to-last page?
+The 3rd-to-last user page below TRAPFRAME is USYSCALL (this lab), which holds the
+read-only shared struct usyscall { pid }. The last two pages are TRAPFRAME and
+TRAMPOLINE (used by the trampoline on trap entry/exit).

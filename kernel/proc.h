@@ -18,6 +18,8 @@ struct context {
   uint64 s11;
 };
 
+struct usyscall;   // lab 3: 前置声明，定义见 memlayout.h
+
 // Per-CPU state.
 struct cpu {
   struct proc *proc;          // The process running on this cpu, or null.
@@ -105,4 +107,5 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  struct usyscall *usyscallpage; // lab 3: 加速 getpid 的共享只读页
 };
