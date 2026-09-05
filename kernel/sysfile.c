@@ -283,6 +283,66 @@ create(char *path, short type, short major, short minor)
   return ip;
 }
 
+// lab 9: 跟踪符号链接——ip 是已持锁的符号链接 inode，
+// 返回其最终指向的真实文件 inode（保持持锁），超过最大深度返回 0。
+static struct inode*
+follow_symlink(struct inode *ip, int depth)
+{
+  char target[MAXPATH];
+  struct inode *nip;
+  int n;
+
+  if(depth > NSYMLINK)      // 超过深度：近似判定成环
+    return 0;
+
+  // 读链接文件内容（即目标路径字符串）
+  n = readi(ip, 0, (uint64)target, 0, MAXPATH);
+  if(n <= 0)
+    return 0;
+  target[n] = '\0';          // writei 只写了 strlen 字节（无 '\0'），手动补
+
+  // 若目标还是符号链接则递归（先释放当前 inode 锁再继续）
+  iunlockput(ip);
+  if((nip = namei(target)) == 0)
+    return 0;
+  ilock(nip);
+  if(nip->type == T_SYMLINK)
+    return follow_symlink(nip, depth + 1);
+  return nip;               // 指向真实文件（已持锁）
+}
+
+// lab 9: 创建符号链接 sys_symlink(target, path)
+uint64
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *ip;
+  int n;
+
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+
+  // 创建 type=T_SYMLINK 的特殊文件；内容（target 路径）稍后写入
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0){
+    end_op();
+    return -1;
+  }
+
+  // 把 target 字符串作为文件内容写入 inode（持锁下 writei）
+  n = strlen(target);
+  if(writei(ip, 0, (uint64)target, 0, n) != n){
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+
+  iunlockput(ip);
+  end_op();
+  return 0;
+}
+
 uint64
 sys_open(void)
 {
@@ -309,6 +369,15 @@ sys_open(void)
       return -1;
     }
     ilock(ip);
+
+    // lab 9: 若打开的是符号链接且未指定 O_NOFOLLOW → 跟随到真实文件
+    if(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)){
+      if((ip = follow_symlink(ip, 0)) == 0){   // 跟随失败/成环
+        end_op();
+        return -1;
+      }
+    }
+
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();

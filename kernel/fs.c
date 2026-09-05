@@ -378,7 +378,8 @@ static uint
 bmap(struct inode *ip, uint bn)
 {
   uint addr, *a;
-  struct buf *bp;
+  struct buf *bp, *bp2;
+  uint *a2;
 
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0)
@@ -400,6 +401,33 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
     return addr;
   }
+  bn -= NINDIRECT;
+
+  // lab 9: 双间接块——addrs[NDIRECT+1] 指向一个"目录块"，
+  // 该目录块含 NINDIRECT 个指针，每个指向一个单间接块。
+  if(bn < NDBL_INDIRECT){
+    if((addr = ip->addrs[NDIRECT+1]) == 0)
+      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);   // 分配双间接块
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+
+    // 第一级：bn / NINDIRECT 定位到某个单间接块
+    if((addr = a[bn / NINDIRECT]) == 0){
+      a[bn / NINDIRECT] = addr = balloc(ip->dev);       // 分配单间接块
+      log_write(bp);
+    }
+    brelse(bp);
+
+    // 第二级：在单间接块中 bn % NINDIRECT 定位数据块
+    bp2 = bread(ip->dev, addr);
+    a2 = (uint*)bp2->data;
+    if((addr = a2[bn % NINDIRECT]) == 0){
+      a2[bn % NINDIRECT] = addr = balloc(ip->dev);
+      log_write(bp2);
+    }
+    brelse(bp2);
+    return addr;
+  }
 
   panic("bmap: out of range");
 }
@@ -409,9 +437,9 @@ bmap(struct inode *ip, uint bn)
 void
 itrunc(struct inode *ip)
 {
-  int i, j;
-  struct buf *bp;
-  uint *a;
+  int i, j, k;
+  struct buf *bp, *bp2;
+  uint *a, *a2;
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
@@ -430,6 +458,29 @@ itrunc(struct inode *ip)
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  // lab 9: 释放双间接块——
+  // ① 读取双间接块，对其指向的每个单间接块：先释放其数据块，再释放该单间接块
+  // ② 最后释放双间接块本身
+  if(ip->addrs[NDIRECT+1]){
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+    a = (uint*)bp->data;
+    for(j = 0; j < NINDIRECT; j++){
+      if(a[j]){
+        bp2 = bread(ip->dev, a[j]);      // 该单间接块
+        a2 = (uint*)bp2->data;
+        for(k = 0; k < NINDIRECT; k++){  // 释放其下所有数据块
+          if(a2[k])
+            bfree(ip->dev, a2[k]);
+        }
+        brelse(bp2);
+        bfree(ip->dev, a[j]);            // 释放单间接块本身
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT+1]); // 释放双间接块本身
+    ip->addrs[NDIRECT+1] = 0;
   }
 
   ip->size = 0;

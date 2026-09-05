@@ -26,7 +26,7 @@ struct inode {
   short minor;
   short nlink;
   uint size;
-  uint addrs[NDIRECT+1];
+  uint addrs[NDIRECT+2];   // lab 9: 与 fs.h dinode 一致（含双间接槽）
 };
 
 // map major device number to device functions.
