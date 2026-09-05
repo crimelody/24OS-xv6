@@ -65,6 +65,11 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 15){
+    // lab 5: store page fault——尝试写 COW 页，触发写时复制
+    uint64 fault_va = r_stval();       // 引发故障的虚拟地址
+    if(cowhandler(p->pagetable, fault_va) < 0)
+      p->killed = 1;                   // 非 COW 写或内存不足 → 杀进程
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

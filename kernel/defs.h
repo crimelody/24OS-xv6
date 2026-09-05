@@ -63,6 +63,8 @@ void            ramdiskrw(struct buf*);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
+void            incref(void *);   // lab 5: 增加物理页引用计数
+int             pageref(void *);  // lab 5: 查询物理页引用计数
 
 // log.c
 void            initlog(int, struct superblock*);
@@ -166,6 +168,7 @@ int             uvmcopy(pagetable_t, pagetable_t, uint64);
 void            uvmfree(pagetable_t, uint64);
 void            uvmunmap(pagetable_t, uint64, uint64, int);
 void            uvmclear(pagetable_t, uint64);
+int             cowhandler(pagetable_t, uint64);  // lab 5: COW 缺页处理
 uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);

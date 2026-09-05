@@ -293,38 +293,39 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 
 // Given a parent process's page table, copy
 // its memory into a child's page table.
-// Copies both the page table and the
-// physical memory.
+// lab 5 (COW): 不再复制物理内存，而是让父子共享同一物理页，
+// 清除 PTE_W 并打上 COW 标记；真正需要写时在 page fault 里复制。
 // returns 0 on success, -1 on failure.
-// frees any allocated pages on failure.
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
+
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+
+    // 只对"原本可写"的页做 COW：只读页（如代码段）保持共享只读即可，
+    // 若误标 COW，会破坏只读保护（写它本应 fault 而不是复制）。
+    if(flags & PTE_W){
+      flags = (flags & ~PTE_W) | PTE_COW;   // 清写位，标 COW
+      *pte = (PA2PTE(pa) | flags);          // 父进程页表同步清写位
     }
+
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      uvmunmap(new, 0, i / PGSIZE, 1);
+      return -1;
+    }
+    incref((void *)pa);   // lab 5: 子进程共享了该页，引用 +1
   }
   return 0;
-
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
 }
 
 // mark a PTE invalid for user access.
@@ -340,6 +341,40 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
+// lab 5: COW 缺页处理——va 指向的页若是 COW 页（只读+标记），
+// 分配新物理页、复制内容、更新 PTE 为可写并清 COW 标记。
+// 成功返回 0；不是 COW 页或内存不足返回 -1（调用方 kill 进程）。
+int
+cowhandler(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+  uint64 pa, newpa;
+  uint flags;
+
+  if(va >= MAXVA)
+    return -1;
+
+  pte = walk(pagetable, va, 0);
+  if(pte == 0)
+    return -1;
+
+  flags = PTE_FLAGS(*pte);
+  // 必须是 COW 页才处理：有效 + 标了 COW + 用户页 + 当前不可写
+  if((flags & PTE_V) == 0 || (flags & PTE_COW) == 0 ||
+     (flags & PTE_U) == 0 || (flags & PTE_W) != 0)
+    return -1;
+
+  pa = PTE2PA(*pte);
+  if((newpa = (uint64)kalloc()) == 0)
+    return -1;                 // 无内存，kill 该进程
+  memmove((void *)newpa, (void *)pa, PGSIZE);   // 复制旧页内容
+  flags = (flags & ~PTE_COW) | PTE_W;           // 去掉 COW，改为可写
+  *pte = (PA2PTE(newpa) | flags);               // 本进程 PTE 指向新页
+
+  kfree((void *)pa);   // 旧页引用 -1（若其他进程仍引用则不会真释放）
+  return 0;
+}
+
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
@@ -350,6 +385,13 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    // lab 5: 若目标页是 COW 页，内核要写它，先触发复制（与用户写同一路径）。
+    // 注意 va0 >= MAXVA 时不能直接 walk()（walk 会 panic），交给 walkaddr 处理。
+    if(va0 < MAXVA){
+      pte_t *pte = walk(pagetable, va0, 0);
+      if(pte != 0 && (*pte & PTE_COW) && (*pte & PTE_U))
+        cowhandler(pagetable, va0);
+    }
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
