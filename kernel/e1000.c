@@ -96,13 +96,41 @@ int
 e1000_transmit(struct mbuf *m)
 {
   //
-  // Your code here.
+  // 把 mbuf 指向的以太网帧交给 e1000 DMA 发送：
+  //   1) 取下一个可用的 TX 描述符位置（TDT）
+  //   2) 若该描述符还没做完上次发送（无 DD 位）→ ring 满，返回 -1
+  //   3) 若槽里还留着上一个 mbuf 的指针，先释放它
+  //   4) 填描述符：addr=mbuf 数据、length、cmd=RS|EOP
+  //   5) 把 mbuf 指针存入槽位（DMA 完成后再释放）
+  //   6) 推进 TDT 通知网卡"有新包可发"
   //
-  // the mbuf contains an ethernet frame; program it into
-  // the TX descriptor ring so that the e1000 sends it. Stash
-  // a pointer so that it can be freed after sending.
-  //
-  
+  acquire(&e1000_lock);
+
+  int idx = regs[E1000_TDT];              // 下一个要用的描述符
+  struct tx_desc *desc = &tx_ring[idx];
+
+  // DD 位未置 → 该槽还在被网卡使用（上一个包没发完），ring 满
+  if((desc->status & E1000_TXD_STAT_DD) == 0){
+    release(&e1000_lock);
+    return -1;
+  }
+
+  // 释放该槽上次使用的 mbuf（首次为 0，后续发完才轮到本槽）
+  if(tx_mbufs[idx] != 0)
+    mbuffree(tx_mbufs[idx]);
+
+  // 装载新帧
+  tx_mbufs[idx] = m;
+  desc->addr = (uint64)m->head;            // 帧数据所在
+  desc->length = m->len;                   // 帧长度
+  desc->cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS; // 整包+要状态回报
+  desc->status = 0;                        // 清旧状态
+
+  // 推进 Tail，网卡即开始 DMA 发送
+  regs[E1000_TDT] = (idx + 1) % TX_RING_SIZE;
+
+  __sync_synchronize();                    // 确保写已对设备可见
+  release(&e1000_lock);
   return 0;
 }
 
@@ -110,11 +138,36 @@ static void
 e1000_recv(void)
 {
   //
-  // Your code here.
+  // 循环取走网卡收到的所有包：
+  //   1) 从 RDT+1（下一个待处理位）开始
+  //   2) 描述符 DD 位未置 → 没有新包，结束
+  //   3) 用 mbufput 按网卡写入的长度修正 mbuf
+  //   4) 交给协议栈 net_rx() 处理（会负责释放）
+  //   5) 分配新 mbuf 还回 ring，让网卡能继续收
+  //   6) 推进 RDT，循环处理同一时刻可能堆积的多个包
   //
-  // Check for packets that have arrived from the e1000
-  // Create and deliver an mbuf for each packet (using net_rx()).
-  //
+  while(1){
+    int idx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;   // 下一个有数据的槽
+    struct rx_desc *desc = &rx_ring[idx];
+
+    if((desc->status & E1000_RXD_STAT_DD) == 0)
+      break;                              // 无新包
+
+    // 收到一个包：取 mbuf、修正其长度（网卡 DMA 了多少字节）
+    struct mbuf *m = rx_mbufs[idx];
+    mbufput(m, desc->length);
+
+    // 交给网络协议栈处理（内部最终 mbuffree）
+    net_rx(m);
+
+    // 归还新缓冲给网卡，复位状态，推进 RDT
+    rx_mbufs[idx] = mbufalloc(0);
+    if(rx_mbufs[idx] == 0)
+      panic("e1000");
+    desc->addr = (uint64)rx_mbufs[idx]->head;
+    desc->status = 0;
+    regs[E1000_RDT] = idx;
+  }
 }
 
 void
