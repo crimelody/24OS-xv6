@@ -65,3 +65,6 @@
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
+
+// lab 10: mmap 映射的最低可用地址（低于它的是堆/栈，不可用）
+#define MMAPMINADDR (TRAPFRAME - 32 * PGSIZE)

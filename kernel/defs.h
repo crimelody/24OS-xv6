@@ -33,6 +33,8 @@ void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
+int             mmap_pagefault(uint64);  // lab 10: mmap 懒加载缺页处理（sysfile.c）
+void            unmap_all_vmas(struct proc*);  // lab 10: 退出时清理 VMA（sysfile.c）
 
 // fs.c
 void            fsinit(int);
@@ -165,6 +167,7 @@ uint64          uvmdealloc(pagetable_t, uint64, uint64);
 int             uvmcopy(pagetable_t, pagetable_t, uint64);
 void            uvmfree(pagetable_t, uint64);
 void            uvmunmap(pagetable_t, uint64, uint64, int);
+void            uvm_cleanunmap(pagetable_t, uint64, uint64, int);  // lab 10: 宽容版 unmap
 void            uvmclear(pagetable_t, uint64);
 uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);

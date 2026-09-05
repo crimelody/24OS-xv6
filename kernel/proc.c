@@ -303,6 +303,14 @@ fork(void)
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
+  // lab 10: fork 复制 VMA 表（mmap 页是懒加载，元数据复制即可；
+  // 每个映射文件增引用，保证子进程缺页时文件仍存在）
+  for(i = 0; i < 16; i++){
+    np->vmas[i] = p->vmas[i];
+    if(np->vmas[i].used)
+      filedup(np->vmas[i].f);
+  }
+
   pid = np->pid;
 
   release(&np->lock);
@@ -343,6 +351,9 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  // lab 10: 先解除所有 mmap 映射（脏的 MAP_SHARED 页写回文件）
+  unmap_all_vmas(p);
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

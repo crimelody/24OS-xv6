@@ -186,6 +186,32 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   }
 }
 
+// lab 10: 与 uvmunmap 相同，但对"懒分配未建立映射"的页宽容处理
+// （mmap 区域可能只有部分页被触发过）。已映射页释放，未映射页跳过。
+void
+uvm_cleanunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
+{
+  uint64 a;
+  pte_t *pte;
+
+  if((va % PGSIZE) != 0)
+    panic("uvm_cleanunmap: not aligned");
+
+  for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
+    if((pte = walk(pagetable, a, 0)) == 0)
+      continue;                  // 中间页表不存在 → 页未映射，跳过
+    if((*pte & PTE_V) == 0)
+      continue;                  // PTE 无效 → 页未映射，跳过
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("uvm_cleanunmap: not a leaf");
+    if(do_free){
+      uint64 pa = PTE2PA(*pte);
+      kfree((void*)pa);
+    }
+    *pte = 0;
+  }
+}
+
 // create an empty user page table.
 // returns 0 if out of memory.
 pagetable_t

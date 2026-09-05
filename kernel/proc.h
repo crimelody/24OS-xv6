@@ -1,3 +1,5 @@
+struct file;     // lab 10: vm_area 用到 struct file*，前向声明
+
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -82,6 +84,17 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+// lab 10: 虚拟内存区域（VMA）——记录一次 mmap 映射的元信息
+struct vm_area {
+  int used;            // 该槽是否在用
+  uint64 addr;         // 映射起始虚拟地址
+  int len;             // 映射长度（字节）
+  int prot;            // PROT_READ / PROT_WRITE
+  int flags;           // MAP_SHARED / MAP_PRIVATE
+  int offset;          // 文件内偏移
+  struct file *f;      // 映射的文件（filedup 持有引用）
+};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -105,4 +118,6 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  struct vm_area vmas[16];     // lab 10: 本进程的全部 mmap 区域（进程私有）
 };
