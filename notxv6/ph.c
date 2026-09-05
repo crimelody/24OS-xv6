@@ -17,6 +17,8 @@ struct entry *table[NBUCKET];
 int keys[NKEYS];
 int nthread = 1;
 
+pthread_mutex_t lock[NBUCKET];   // lab 6: 每个哈希桶一把锁（细粒度并发）
+
 
 double
 now()
@@ -41,6 +43,10 @@ void put(int key, int value)
 {
   int i = key % NBUCKET;
 
+  // lab 6: 该桶的链表是共享结构，多线程 put 同一桶会竞争。
+  // 用 per-bucket 锁保护"查表 + 插入/更新"整个临界区。
+  pthread_mutex_lock(&lock[i]);
+
   // is the key already present?
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
@@ -55,6 +61,7 @@ void put(int key, int value)
     insert(key, value, &table[i], table[i]);
   }
 
+  pthread_mutex_unlock(&lock[i]);
 }
 
 static struct entry*
@@ -117,6 +124,10 @@ main(int argc, char *argv[])
   for (int i = 0; i < NKEYS; i++) {
     keys[i] = random();
   }
+
+  // lab 6: 初始化每个桶的锁
+  for(int i = 0; i < NBUCKET; i++)
+    pthread_mutex_init(&lock[i], NULL);
 
   //
   // first the puts

@@ -1,0 +1,19 @@
+Q1: Why are there missing keys with 2 threads, but not with 1 thread?
+With one thread, insertions to a bucket happen one after another, so the
+linked-list head table[i] is updated before the next insert reads it. With two
+threads, put() on the SAME bucket can interleave: both threads read the same
+table[i] (NULL), both call insert() which sets *p = new entry, and the second
+write overwrites the first — one key is silently lost. The race window is
+"read head -> allocate entry -> write head" not being atomic.
+
+Q2: What does the report mean by a "missing key"?
+A key that was inserted by put() but never appears in the table afterward.
+get_thread() later looks up every one of the NKEYS keys and counts those that
+return NULL.
+
+Q3: Suggest a lock design to avoid missing keys while allowing high
+concurrency.
+Use one lock per hash bucket (an array of NBUCKET mutexes) instead of a single
+global lock. put() locks only the bucket that key%NBUCKET maps to, so threads
+working on different buckets never contend; threads on the same bucket are
+serialized, which is exactly the required critical section.

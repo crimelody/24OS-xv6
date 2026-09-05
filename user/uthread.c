@@ -10,10 +10,30 @@
 #define STACK_SIZE  8192
 #define MAX_THREAD  4
 
+// 保存被切换线程的寄存器（与内核 struct context 对应）
+struct context {
+  uint64 ra;   // 返回地址：切回该线程时从哪继续执行
+  uint64 sp;   // 栈指针
+
+  // callee-saved 寄存器：C 编译器约定这些由被调函数保存
+  uint64 s0;
+  uint64 s1;
+  uint64 s2;
+  uint64 s3;
+  uint64 s4;
+  uint64 s5;
+  uint64 s6;
+  uint64 s7;
+  uint64 s8;
+  uint64 s9;
+  uint64 s10;
+  uint64 s11;
+};
 
 struct thread {
   char       stack[STACK_SIZE]; /* the thread's stack */
   int        state;             /* FREE, RUNNING, RUNNABLE */
+  struct context context;       /* lab 6: 线程切换时保存/恢复的寄存器 */
 };
 struct thread all_thread[MAX_THREAD];
 struct thread *current_thread;
@@ -58,10 +78,9 @@ thread_schedule(void)
     next_thread->state = RUNNING;
     t = current_thread;
     current_thread = next_thread;
-    /* YOUR CODE HERE
-     * Invoke thread_switch to switch from t to next_thread:
-     * thread_switch(??, ??);
-     */
+    /* lab 6: 切换到 next_thread。thread_switch 保存 t 的寄存器、
+     * 恢复 next_thread 的寄存器，然后 ret 到 next_thread 上次离开的地方。*/
+    thread_switch((uint64)&t->context, (uint64)&current_thread->context);
   } else
     next_thread = 0;
 }
@@ -75,7 +94,12 @@ thread_create(void (*func)())
     if (t->state == FREE) break;
   }
   t->state = RUNNABLE;
-  // YOUR CODE HERE
+  // lab 6: 初始化新线程的上下文——
+  //   ra = func：第一次被 thread_switch 切到时 ret 会跳到 func
+  //   sp = 栈顶：该线程用自己的栈执行（向低地址生长，sp 从高地址开始）
+  memset(&t->context, 0, sizeof(t->context));
+  t->context.ra = (uint64)func;
+  t->context.sp = (uint64)(t->stack + STACK_SIZE);
 }
 
 void 
